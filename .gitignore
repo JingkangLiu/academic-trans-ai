@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 项目特定
+.env
+outputmd/
+workmd/
+inputimages/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.log
+
+# 保留现有忽略规则
+*.sqlite
+*.log
+*.temp
+*.swp
+
+# 新增忽略配置文件
+|.env 
+
+# 新增测试相关忽略
+.coverage
+.pytest_cache/
+tests/__pycache__/
+test_output/ 
