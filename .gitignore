@@ -38,6 +38,8 @@ inputimages/
 .pytest_cache/
 .coverage
 htmlcov/
+pending/
+reprocessing/
 
 # 系统文件
 .DS_Store

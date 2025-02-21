@@ -1,0 +1,25 @@
+# 输出目录
+outputmd/
+outputimages/
+
+# 工作目录
+workmd/
+pending/
+reprocessing/
+inputimages/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 虚拟环境
+venv/
+.env
+
+# IDE 配置
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
