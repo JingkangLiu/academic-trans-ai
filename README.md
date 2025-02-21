@@ -47,7 +47,6 @@ cp .env.example .env
 # .env
 API_KEYS="your_key_1,your_key_2"  # 支持多个API密钥
 BASE_URL="https://api.siliconflow.cn/v1/"
-MODEL_NAME="deepseek-ai/DeepSeek-R1"  # 默认模型
 MAX_CONCURRENT=5  # 最大并发数
 ```
 
@@ -119,7 +118,6 @@ async def translate_segment():
 |------|------|------|
 | Markdown | 学术论文/技术文档 | `*.md` |
 | Text | 纯文本格式 | `*.txt` |
-| LaTeX | 数学公式片段 | `*.tex` |
 
 ## ⚙️ 高级配置
 
@@ -139,10 +137,6 @@ sys_prompts = {
     3. 统一数学符号翻译"""
 }
 
-# 性能参数
-SEMAPHORE = 20  # 并发连接数
-CHUNK_SIZE = 4000  # 分段字符数
-```
 
 ## 📊 监控与统计
 
@@ -152,8 +146,6 @@ CHUNK_SIZE = 4000  # 分段字符数
 处理文件: 8
 成功段落: 127
 失败段落: 3
-平均响应时间: 4.2s
-API使用成本: $0.87
 ```
 
 ## 🔍 故障排查
@@ -172,11 +164,6 @@ API使用成本: $0.87
    python dollar_checker.py --fix  # 自动修复
    ```
 
-3. **上下文丢失**
-   ```python
-   # 调整对话历史长度
-   HISTORY_LENGTH=3  # 减少历史上下文
-   ```
 
 ## 🌍 多语言支持
 
