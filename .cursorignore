@@ -14,7 +14,6 @@ __pycache__/
 
 # 虚拟环境
 venv/
-.env
 
 # IDE 配置
 .vscode/

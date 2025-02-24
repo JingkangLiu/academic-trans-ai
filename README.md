@@ -1,30 +1,31 @@
-# 学术文档翻译处理系统
+# 学术文档翻译处理系统 3.0
 
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Workflow](https://img.shields.io/badge/工作流-流式处理-green)
+![Arch](https://img.shields.io/badge/架构-滚动窗口-green)
 
-基于大模型的智能流式翻译系统，专为处理含复杂数学公式的学术文档设计，支持多模型协同工作。
+基于深度上下文的智能窗口翻译系统，专为处理长文档的语义连贯性设计，支持动态上下文维护。
 
-## 🌟 全新特性
+## 🌟 3.0 新特性
 
-- **流式分段处理**：智能分割大文件，保持上下文连贯性
-- **多模型协同**：支持DeepSeek/Claude/GPT等多种模型
-- **对话历史维护**：自动维护最近5轮对话上下文
-- **智能错误恢复**：分段重试与断点续传机制
-- **格式优化引擎**：自动优化LaTeX公式和算法排版
+- **滚动窗口机制**：三窗口上下文感知（前文-当前-后文）
+- **动态提示词引擎**：根据上下文自动生成优化提示
+- **智能错误隔离**：自动保存错误段落原文到独立目录
+- **全链路日志**：完整记录每次API请求和响应
+- **分级API池**：主备密钥分离管理，智能切换
 
 ## 🚀 推荐工作流
 
 ```mermaid
 graph TD
-    A[原始Markdown] --> B{流式分段}
-    B --> C[模型翻译]
-    C --> D[实时保存]
-    D --> E{后处理}
-    E --> F[格式修正]
-    E --> G[公式检查]
-    E --> H[文件合并]
+    A[原始文档] --> B{滚动窗口分割}
+    B --> C[上下文分析]
+    C --> D[动态提示生成]
+    D --> E[多模型协同]
+    E --> F[实时日志记录]
+    F --> G{质量检查}
+    G --> H[保存翻译]
+    G --> I[错误隔离]
 ```
 
 ## 📦 快速开始
@@ -48,68 +49,56 @@ cp .env.example .env
 API_KEYS="your_key_1,your_key_2"  # 支持多个API密钥
 BASE_URL="https://api.siliconflow.cn/v1/"
 MAX_CONCURRENT=5  # 最大并发数
+WINDOW_SIZE=3          # 上下文窗口数量
+MAX_SEGMENT_LENGTH=4000 # 最大分段长度
+LOG_RETENTION=7        # 日志保留天数
 ```
 
-3. **运行流式翻译**
+3. **运行窗口翻译**
 ```bash
-python streaming.py
+# 3.0版本使用新入口文件
+python streaming_window.py
 ```
 
 ## 🛠 核心功能详解
 
-### 智能分段处理
+### 滚动窗口机制
 ```python
-# 基于语义的分段算法
-def split_content(content: str, max_length: int = 3000) -> List[str]:
-    from Segmente import MarkdownSegmenter
-    segmenter = MarkdownSegmenter(max_length=max_length)
-    return segmenter.segment(content)
+# 窗口上下文创建
+def create_window(segments: List[str], index: int) -> Tuple[str, str, str]:
+    prev = segments[index-1] if index > 0 else ""
+    current = segments[index]
+    next_seg = segments[index+1] if index < len(segments)-1 else ""
+    return prev, current, next_seg
 ```
-- 保持章节完整性
-- 自动识别公式/算法块
-- 上下文感知分割
+- 三窗口上下文维护
+- 首尾段落特殊处理
+- 动态上下文边界检测
 
-### 流式处理引擎
+### 动态提示引擎
 ```python
-async def translate_file():
-    # 维护最近5轮对话历史
-    k = 5  
-    messages = []
-    
-    for segment in segments:
-        # 构建上下文感知提示
-        current_messages = [
-            {"role": "system", sys_prompt},
-            *messages[-2*k:],  # 保留最近k轮对话
-            {"role": "user", f"继续翻译：{segment}"}
-        ]
-        
-        # 流式响应处理
-        stream = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=current_messages,
-            stream=True
-        )
-        
-        # 实时写入文件
-        with open(output_file, 'a') as f:
-            for chunk in stream:
-                f.write(chunk.content)
+def build_dynamic_prompt(prev_seg, current_seg, next_seg, 
+                        history, total_rounds, current_round, use_r1):
+    # 根据上下文动态生成提示词
+    user_template = f"""
+    【滚动翻译】第{current_round}/{total_rounds}轮
+    <<前文>> {prev_seg[:200]}...
+    <<当前>> {current_seg[:200]}...
+    <<后文>> {next_seg[:200]}...
+    """
+    return user_template
 ```
 
-### 错误恢复机制
+### 智能错误处理
 ```python
-max_retries = 5  # 最大重试次数
-retry_delay = exp_backoff()  # 指数退避算法
+# 错误段落保存路径
+ERROR_DIR = Path("errormd") 
 
-async def translate_segment():
-    while retry_count < max_retries:
-        try:
-            # 尝试翻译
-            return await api_call()
-        except APIError:
-            await sleep(retry_delay)
-            retry_count += 1
+async def process_segment(...):
+    if is_original:
+        error_file = ERROR_DIR / f"error_{output_file.name}"
+        with open(error_file, 'a') as f:
+            f.write(f"\n错误段落 {index}:\n{translated}")
 ```
 
 ## 📚 文件类型支持
@@ -119,62 +108,52 @@ async def translate_segment():
 | Markdown | 学术论文/技术文档 | `*.md` |
 | Text | 纯文本格式 | `*.txt` |
 
-## ⚙️ 高级配置
-
-```python
-# streaming.py
-
-# 系统提示词模板
-sys_prompts = {
-    "md": """[Markdown专用提示]
-    1. 保持$$公式块独立
-    2. 转换HTML表格为Markdown
-    3. 优化代码块缩进""",
-    
-    "tex": """[LaTeX专用提示]
-    1. 保留\begin{}环境
-    2. 中文标点与公式符号隔离
-    3. 统一数学符号翻译"""
-}
-
-
 ## 📊 监控与统计
 
 ```bash
-# 运行后查看统计信息
-[翻译统计]
-处理文件: 8
-成功段落: 127
-失败段落: 3
+# 新增日志目录结构
+outputmd/
+├── chatlogs/         # 完整对话日志
+├── errormd/          # 错误段落存档
+└── trans_*.md        # 翻译结果
 ```
 
 ## 🔍 故障排查
 
-常见问题解决方案：
-1. **API限流错误**
+新增滚动窗口特有问题解决：
+
+3. **上下文衔接异常**
    ```bash
-   # 调整.env配置
-   MAX_CONCURRENT=3  # 降低并发数
-   RETRY_DELAY=10    # 增加重试间隔
+   # 查看chatlogs中的上下文记录
+   tail -n 100 outputmd/chatlogs/filename_chatlog.txt
+   
+   # 调整窗口大小
+   WINDOW_SIZE=5
    ```
 
-2. **公式格式错乱**
+4. **长公式断裂**
    ```bash
-   # 运行后处理工具
-   python dollar_checker.py --fix  # 自动修复
+   # 启用R1模型强制优化
+   FORCE_R1=true
    ```
 
-
-## 🌍 多语言支持
+## 🌍 多语言扩展
 
 ```python
-# 通过修改系统提示词切换语言
-sys_prompts["translation"] = {
-    "en2zh": "中文学术翻译专家",
-    "en2ja": "Japanese academic translation",
-    "en2ko": "한국어 학술 번역 전문가"
+# 动态提示词支持多语言上下文
+sys_prompts["multi_lingual"] = {
+    "en2zh": "滚动窗口翻译专家（中英）",
+    "en2de": "Deutscher Fachübersetzer mit Kontextfenster"
 }
 ```
+
+## 📜 版本迁移指南
+
+从2.0升级到3.0注意：
+1. 配置文件需新增窗口相关参数
+2. 输出目录结构变化（新增chatlogs/errormd）
+3. API池管理方式改为分级策略
+4. 分段策略改为窗口式智能分割
 
 ## 📄 许可证
 

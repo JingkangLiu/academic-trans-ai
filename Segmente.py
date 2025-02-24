@@ -6,14 +6,12 @@ class MarkdownSegmenter:
     def __init__(self, max_length=5000, min_length=4000):
         self.max_length = max_length
         self.min_length = min_length
-        self.min_segment_length = 800  # 最小分段长度
-        self.max_segment_length = 9000  # 最大分段长度
-        self.small_split_threshold = 800  # 小拆分阈值
         
         # 预编译正则表达式
         self.formula_start = re.compile(r'^\s*\$\$', re.MULTILINE)
+        self.formula_end = re.compile(r'\$\$\s*$')  # 以$$结尾
         self.algorithm_start = re.compile(
-            r'(?:^|\n)###*\s*Algorithm\b|^---.*?\b(Algorithm|Pseudocode)\b',
+            r'(?:^|\n)###*\s*Algorithm\b',
             re.IGNORECASE
         )
         self.continuation_keywords = re.compile(
@@ -22,22 +20,22 @@ class MarkdownSegmenter:
         )
         self.sentence_end = re.compile(r'[.!?]\s*$')
         self.paragraph_split = re.compile(r'(?<!#)\n\s*\n')
-        self.code_block = re.compile(r'^```.*?^```', re.MULTILINE | re.DOTALL)
+        self.code_block = re.compile(r'^```[^\n]*\n.*?^```', re.MULTILINE | re.DOTALL)
         self.header_pattern = re.compile(r'^#{1,6}\s+')  # 新增标题检测
 
-    def segment(self, content: str) -> List[str]:
+    def segment(self, content: str, return_preprocessed=False) -> List[str]:
         """主分段入口"""
         blocks = self._parse_blocks(content)
         protected_blocks = self._process_protected_zones(blocks)
         segments = self._build_segments(protected_blocks)
-        return self._post_process_segments(segments)
+        
+        return segments  # 直接返回原始分段结果，不再进行后处理
 
     def _parse_blocks(self, content: str) -> List[Dict]:
         """解析文档为带元数据的块列表"""
         raw_blocks = [b for b in self.paragraph_split.split(content) if b.strip()]
         blocks = []
         in_algorithm = False
-        algorithm_nesting = 0
 
         for i, text in enumerate(raw_blocks):
             block = {
@@ -52,33 +50,24 @@ class MarkdownSegmenter:
                 block['type'] = 'header'
                 block['protected'] = True
 
-            # 检测公式块
-            if self.formula_start.match(text):
+            # 检测公式块（仅匹配以$$开头的块）
+            if self.formula_start.search(text) and self.formula_end.search(text):
                 block['type'] = 'formula'
                 block['protected'] = True
 
-            # 检测代码块
-            if self.code_block.search(text):
+            # 检测代码块（完整匹配```...```）
+            if self.code_block.fullmatch(text.strip()):
                 block['type'] = 'code'
                 block['protected'] = True
 
             # 检测算法块开始
             if self.algorithm_start.search(text):
                 in_algorithm = True
-                algorithm_nesting = 0
 
             # 处理算法块内部
             if in_algorithm:
                 block['type'] = 'algorithm'
                 block['protected'] = True
-                algorithm_nesting += self._count_nested_blocks(text)
-
-                # 修正算法块结束检测
-                if text.strip().startswith('---'):
-                    if algorithm_nesting <= 0:
-                        in_algorithm = False
-                    else:
-                        algorithm_nesting = max(0, algorithm_nesting - 1)
 
             # 检测延续关系
             if i > 0:
@@ -97,22 +86,12 @@ class MarkdownSegmenter:
 
     def _needs_continuation(self, prev_text: str, current_text: str) -> bool:
         """判断是否需要延续"""
-        # 新增公式上下文延续规则
-        if re.search(r'\$\$[^$]*$', prev_text) and not re.match(r'^[!\[<]', current_text):
-            return True
-        if re.match(r'^\s*\$\$', current_text) and not re.search(r'[!\]>]\s*$', prev_text):
-            return True
         # 前导文本未结束
         if not self.sentence_end.search(prev_text):
             return True
 
         # 当前文本是延续关键词
         if self.continuation_keywords.match(current_text):
-            return True
-
-        # 公式后的解释性文本
-        if self.formula_start.match(prev_text) and \
-           not self.paragraph_split.match(current_text):
             return True
 
         return False
@@ -122,6 +101,7 @@ class MarkdownSegmenter:
         processed = []
         protected_group = []
         current_protected = False
+        last_protected_type = None  # 跟踪保护类型
 
         for block in blocks:
             if block['protected'] or block['continuation']:
@@ -129,6 +109,13 @@ class MarkdownSegmenter:
                     protected_group = []
                     current_protected = True
                 protected_group.append(block)
+                
+                # 仅当连续同类型保护块时才合并
+                if last_protected_type and block.get('type') != last_protected_type:
+                    processed.append({'type': 'protected_group', 'blocks': protected_group})
+                    protected_group = []
+                
+                last_protected_type = block.get('type')
             else:
                 if current_protected:
                     processed.append({
@@ -227,87 +214,6 @@ class MarkdownSegmenter:
         before = text[:position].count('$') - text[:position].count(r'\$')
         return before % 2 == 1
 
-    def _post_process_segments(self, segments: List[str]) -> List[str]:
-        """对分段进行后处理"""
-        if not segments:
-            return segments
-
-        # 第一步：处理过短的分段
-        processed = []
-        i = 0
-        while i < len(segments):
-            current_len = len(segments[i])
-            
-            if current_len < self.min_segment_length:
-                # 如果是第一段，尝试与下一段合并
-                if i == 0 and i + 1 < len(segments):
-                    processed.append(segments[i] + "\n\n" + segments[i + 1])
-                    i += 2
-                # 如果是最后一段，与前一段合并
-                elif i == len(segments) - 1 and processed:
-                    processed[-1] = processed[-1] + "\n\n" + segments[i]
-                    i += 1
-                # 中间段，选择与较短的相邻段合并
-                elif i > 0 and i + 1 < len(segments):
-                    prev_len = len(processed[-1])
-                    next_len = len(segments[i + 1])
-                    if prev_len <= next_len:
-                        processed[-1] = processed[-1] + "\n\n" + segments[i]
-                    else:
-                        processed.append(segments[i] + "\n\n" + segments[i + 1])
-                        i += 1
-                    i += 1
-                else:
-                    processed.append(segments[i])
-                    i += 1
-            else:
-                processed.append(segments[i])
-                i += 1
-
-        # 第二步：处理过长的分段
-        final_segments = []
-        for i, segment in enumerate(processed):
-            if len(segment) > self.max_segment_length:
-                # 尝试找到合适的小拆分
-                splits = self._find_small_splits(segment)
-                
-                if splits and i > 0 and len(final_segments[-1]) + splits[0] < self.max_segment_length:
-                    # 将第一个小拆分合并到前一段
-                    final_segments[-1] = final_segments[-1] + "\n\n" + segment[:splits[0]]
-                    final_segments.append(segment[splits[0]:])
-                elif splits and i + 1 < len(processed) and \
-                     len(segment[splits[-1]:] + "\n\n" + processed[i + 1]) < self.max_segment_length:
-                    # 将最后一个小拆分合并到后一段
-                    final_segments.append(segment[:splits[-1]])
-                    processed[i + 1] = segment[splits[-1]:] + "\n\n" + processed[i + 1]
-                else:
-                    # 无法优化，保持原样
-                    final_segments.append(segment)
-            else:
-                final_segments.append(segment)
-
-        return final_segments
-
-    def _find_small_splits(self, text: str) -> List[int]:
-        """在文本中寻找可能的小拆分位置"""
-        splits = []
-        
-        # 使用段落分隔符查找可能的拆分点
-        for match in self.paragraph_split.finditer(text):
-            pos = match.start()
-            # 检查拆分点前后的文本长度是否接近小拆分阈值
-            if abs(pos - self.small_split_threshold) < 100:
-                splits.append(pos)
-            
-        # 如果没有找到合适的段落分隔符，尝试在句子边界查找
-        if not splits:
-            for match in self.sentence_end.finditer(text):
-                pos = match.end()
-                if abs(pos - self.small_split_threshold) < 100:
-                    splits.append(pos)
-                
-        return splits
-
 def save_segments(segments: List[str], output_dir: Path):
     output_dir.mkdir(exist_ok=True, parents=True)
     for i, seg in enumerate(segments, 1):
@@ -321,8 +227,11 @@ if __name__ == '__main__':
 
     with open(input_file, 'r', encoding='utf-8') as f:
         content = f.read()
-
     segmenter = MarkdownSegmenter()
     segments = segmenter.segment(content)
+
+    # 保存分段结果
     save_segments(segments, output_dir)
-    print(f'\nTotal segments: {len(segments)}')
+    
+    print("\n" + "="*50)
+    print(f'总分段数量: {len(segments)}')
